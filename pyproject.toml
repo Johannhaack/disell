@@ -1,0 +1,16 @@
+[build-system]
+requires = ["scikit-build-core", "pybind11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "disell"
+version = "0.1.0"
+description = "disell package with C++ speedup"
+authors = [{ name = "Johann Haack", email = "johaac@dtu.dk" }]
+requires-python = ">=3.8"
+readme = "README.md"
+
+[tool.scikit-build]
+wheel.packages = ["src/disell"]
+cmake.minimum-version = "3.12"
+cmake.source-dir = "src/cpp"
