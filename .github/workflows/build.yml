@@ -1,4 +1,4 @@
-name: Build and Publish Wheels for c++ code
+name: Build and Publish Wheels for the c++ code
 
 on:
   push:
