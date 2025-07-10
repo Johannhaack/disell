@@ -1,0 +1,3 @@
+sphinx
+furo            # optional: nice theme
+myst-parser     # if you want Markdown support
