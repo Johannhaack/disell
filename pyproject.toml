@@ -14,3 +14,7 @@ readme = "README.md"
 wheel.packages = ["src/disell"]
 cmake.minimum-version = "3.12"
 cmake.source-dir = "src/cpp"
+
+
+[project.urls]
+"Documentation" = "https://disell.readthedocs.io/"
