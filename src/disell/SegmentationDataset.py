@@ -1,7 +1,7 @@
 import numpy as np
 from scipy import ndimage
-from CellTracking.Tools.flood_fill_probabilities import run_segmentations_parallel,cluster_and_update_centroids,compute_pixel_probabilities
-from CellTracking.Tools.registration import register, apply_transforms
+from .flood_fill_probabilities import run_segmentations_parallel,cluster_and_update_centroids,compute_pixel_probabilities
+from .registration import register, apply_transforms
 
 
 #TODO check if the class can be used for other types of experiments like for rocking only, which it should be because of the channel argument, what about strain scans as they are 3d dimensional in the 2D spacial domain already 
