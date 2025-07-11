@@ -1,4 +1,4 @@
-name: Build and Publish Wheels for the c++ code
+name: Build and Publish Wheels for the C++ code
 
 on:
   push:
@@ -7,11 +7,7 @@ on:
 
 jobs:
   build_wheels:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
+    runs-on: ubuntu-latest   
     steps:
       - uses: actions/checkout@v4
 
@@ -24,9 +20,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install cibuildwheel twine
 
-      - name: Build wheels
+      - name: Build Linux wheels only
         run: |
-          python -m cibuildwheel --output-dir wheelhouse
+          python -m cibuildwheel --platform linux --output-dir wheelhouse
 
       - name: Publish to PyPI
         env:
@@ -34,3 +30,4 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
           twine upload wheelhouse/*
+
