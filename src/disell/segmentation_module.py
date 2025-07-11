@@ -2,7 +2,7 @@ import numpy as np
 from scipy.ndimage import binary_fill_holes
 from typing import Optional
 
-import disell._flood_fill
+from . import _flood_fill as flood_fill
 
 
 

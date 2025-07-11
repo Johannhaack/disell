@@ -1,5 +1,4 @@
 import sys
-sys.path.append("/dtu/3d-imaging-center/projects/2022_QIM_PMP/analysis/johann_haack/CellTracking/Tools")
 import numpy as np
 from typing import Tuple, Dict, Any, Union
 from tqdm import tqdm
@@ -10,8 +9,7 @@ import os
 import time
 from skimage import measure
 from scipy import ndimage
-from disell.disell.segmentation import flood_fill_random_seeds_2D
-
+from .segmentation_module import flood_fill_random_seeds_2D
 
 
 

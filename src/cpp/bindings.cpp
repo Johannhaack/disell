@@ -26,7 +26,7 @@ py::tuple flood_fill_2D_multichannel(
     py::array_t<bool, py::array::c_style | py::array::forcecast> mask
 );
 
-PYBIND11_MODULE(flood_fill, m) {
+PYBIND11_MODULE(_flood_fill, m) {
     m.def("flood_fill_incremental_mean_3D_optimized", &flood_fill_incremental_mean_3D_optimized, "Flood fill with connectivity");
     m.def("flood_fill_2D_multichannel", &flood_fill_2D_multichannel, "Multichannel 2D flood fill");
 }
