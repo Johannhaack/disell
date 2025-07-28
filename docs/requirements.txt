@@ -1,6 +1,7 @@
 sphinx
 furo
 myst-parser
+--only-binary disell
 disell
 
 # Runtime dependencies of your code
