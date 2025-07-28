@@ -1,5 +1,5 @@
 Tutorial
 ========
 
-Look at the Jupyter notebook `disell_example.ipynb` which can be found in the repository:  
-`disell GitHub repository <https://github.com/Johannhaack/disell>`_
+Look at the Jupyter notebook Example which can be found at:  
+`disell GitHub repository <https://github.com/Johannhaack/disell/blob/main/disell_example.ipynb>`
