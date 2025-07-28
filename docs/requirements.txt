@@ -3,6 +3,7 @@ furo
 myst-parser
 --only-binary disell
 disell
+nbsphinx
 
 # Runtime dependencies of your code
 numpy
