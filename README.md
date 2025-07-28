@@ -1,2 +1,2 @@
 # disell
-disell - Dark (FXM) Intedification and Segmentation of Cells
+disell - a [D]ark field xray microscopy tool for the [I]tentification and [S]egmentation of dislocation c[ELL]s
