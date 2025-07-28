@@ -1,4 +1,11 @@
 sphinx
-furo            # optional: nice theme
-myst-parser     # if you want Markdown support
-disell          # so that we have the c++ modules compiled
+furo
+myst-parser
+disell
+
+# Runtime dependencies of your code
+numpy
+scipy
+scikit-image
+scikit-learn
+tqdm
