@@ -25,9 +25,10 @@ extensions = [
     'sphinx.ext.napoleon',
 ]
 
+autodoc_mock_imports = ['disell._flood_fill']
+
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
 
 
 # -- Options for HTML output -------------------------------------------------
