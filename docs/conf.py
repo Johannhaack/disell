@@ -23,7 +23,10 @@ release = '0.1.7'
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
+    'nbsphinx'
 ]
+
+nbsphinx_execute = 'never'
 
 autodoc_mock_imports = ['disell._flood_fill']
 

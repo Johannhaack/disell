@@ -1,3 +1,4 @@
 Tutorial
 ========
-still working on it
+
+.. include:: ../disell_example.ipynb

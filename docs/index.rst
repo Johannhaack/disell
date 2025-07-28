@@ -8,30 +8,30 @@ Welcome to disell
 
 ⚠️ **Note**: Currently supported only on **Linux**.
 
----
+--------------------------------
 
 **Disell** is a high-performance segmentation framework for Dark Field X-ray Microscopy (DFXM).  
 It leverages parallel CPU processing to efficiently segment dislocation cells, even when boundaries are weak or noisy.
 
-### 🔍 Key Features
+--------------------------------
+🔍 Key Features
 
 - Probabilistic segmentation: compute likelihood of modeled cells
 - Optimized for large-scale 2D data
 - Roadmap: 3D and 4D support in development
 - Includes low-level and high-level API
 
-### 🚀 How to Use
+--------------------------------
+🚀 How to Use
 
 Use the `SegmentationDataset` class for a structured workflow.  
 For custom pipelines, call the low-level segmentation and registration functions directly.
 
----
+--------------------------------
 
 .. toctree::
    :maxdepth: 2
    :caption: 📚 Documentation:
 
-   Home <index> 
    api
    tutorial
-
