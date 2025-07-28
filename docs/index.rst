@@ -31,6 +31,7 @@ For custom pipelines, call the low-level segmentation and registration functions
    :maxdepth: 2
    :caption: 📚 Documentation:
 
+   Home <index> 
    api
    tutorial
 
