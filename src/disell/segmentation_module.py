@@ -94,7 +94,7 @@ def flood_fill_random_seeds_2D(
         n_rand = np.random.randint(0, len(rows))
         seed_point = (rows[n_rand], cols[n_rand])
 
-        grain_mask, mean_orientation = flood_fill.flood_fill_2D_multichannel(
+        grain_mask, mean_orientation = flood_fill.flood_fill_2d_dfxm(
             property_map,
             seed_point,
             footprint,
@@ -174,7 +174,7 @@ def flood_fill_random_seeds_3D(
         seed_point = voxel_list.pop()
         if segmentation[seed_point] != 0:
             continue
-        grain_mask, mean_orientation = flood_fill.flood_fill_incremental_mean_3D_optimized(
+        grain_mask, mean_orientation = flood_fill.flood_fill_3d_dfxm(
             property_map,
             seed_point,
             footprint,
