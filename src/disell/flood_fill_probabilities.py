@@ -9,20 +9,22 @@ import os
 import time
 from skimage import measure
 from scipy import ndimage
-from .segmentation_module import flood_fill_random_seeds_2D
-
+from .segmentation_module import flood_fill_random_seeds_2D, flood_fill_random_seeds_3D
 
 
 def run_segmentations_parallel(
     iterations: int,
     property_map: np.ndarray,
     mask: np.ndarray,
-    local_disorientation_tolerance: float = 0.02,
+    local_disorientation_tolerance: float = 0.005,
     global_disorientation_tolerance: float = 0.04,
+    footprint_tolerance: float = 0.4,
     max_iterations_per_single_run: int = 200,
     min_grain_size: int = 50,
-    n_jobs: int = None
-) -> Tuple[np.ndarray, Dict[int, Dict[int, Tuple[Tuple[float, ...],int,Tuple[float, ...]]]], np.ndarray]:
+    n_jobs: int = None,
+    footprint: np.ndarray = None,	
+    verbose: bool = False
+):
     """
     Run multiple flood fill segmentations in parallel.
 
@@ -33,7 +35,7 @@ def run_segmentations_parallel(
     property_map : np.ndarray
         Input property map.
     mask : np.ndarray
-        Binary mask.
+        Binary mask, that mask the area in which random seed scan be set for the flood fill algorithm and also by its dimensino determines the dimension of the segmentation.
     local_disorientation_tolerance : float, default=0.02
         Local similarity threshold.
     global_disorientation_tolerance : float, default=0.04
@@ -44,27 +46,44 @@ def run_segmentations_parallel(
         Minimum region size.
     n_jobs : int, optional
         Number of parallel workers. Uses all cores if None.
+    footprint_tolerance : float, default=0.0
+        The footprint_tolerance works in the following way: If the tolerance is zero, we look within a footprint and if a single pixel/voxel is within the local/global threshold we grow, that voxel/pixel.
+        But what if we have only one element in the footprint that satisfies this condition. The footprint treshold adresses that and only pixel/voxels are added if the condition satiesfies for a number of voxels within the footprint.
 
     Returns
     -------
     tuple
         (label_matrix, regions_features_dict, idx_map)
         label_matrix: np.ndarray
-            Label matrix of shape (N_runs, N_valid).
+            Label matrix of shape (N_runs, N_valid), means for each run the label of all the 1D valid pixels.
         regions_features_dict: dict
             for each run we save the regions features, which are the centroids,areas and mean orientations of the regions, marked by the label of that segmentation
         idx_map: np.ndarray
             USed to later get back the 1D array to the 2D size, its a good memory saving option.
     """
+    #Check if mask and property match
+    if mask.ndim != property_map.ndim:
+        raise ValueError(f"Mask and property map must have the same number of dimensions, but have {mask.ndim} and {property_map.ndim} dimensions, with property map having shape: {property_map.shape} and mask having shape: {mask.shape}")
+    
     if n_jobs is None:
         n_jobs = mp.cpu_count()
+        
+    if verbose:
+        dimensions = "not defined"
+        if mask.ndim == 2:
+            dimensions = "2D"
+        elif mask.ndim == 3:
+            dimensions = "3D"
 
+        print(f"Running {iterations} segmentations with {n_jobs} jobs for {dimensions} segmentation")
     idx_map = setup_mask_index(mask)
     args = [
         (
             i, property_map, mask,
             local_disorientation_tolerance, 
             global_disorientation_tolerance,
+            footprint_tolerance,
+            footprint,
             max_iterations_per_single_run,
             min_grain_size
         )
@@ -72,16 +91,16 @@ def run_segmentations_parallel(
     ]
 
     label_matrix = np.zeros((iterations, mask.sum()), dtype=np.uint16)
-    regions_features_dict = {}
+    centroids_dict = {}
 
     with mp.Pool(n_jobs) as pool:
         results = pool.map(run_segmentation_worker, args)
 
-    for run_id, valid_labels, regions_features in results:
+    for run_id, valid_labels, centroids in results:
         label_matrix[run_id, :] = valid_labels
-        regions_features_dict[run_id] = regions_features
+        centroids_dict[run_id] = centroids
 
-    return label_matrix, regions_features_dict, idx_map
+    return label_matrix, centroids_dict, idx_map
 
 
 def setup_mask_index(mask: np.ndarray) -> np.ndarray:
@@ -140,8 +159,10 @@ def run_single_segmentation(
     mask: np.ndarray,
     local_disorientation_tolerance: float,
     global_disorientation_tolerance: float,
+    footprint_tolerance: float,
+    footprint: np.ndarray,
     max_iterations_per_single_run: int,
-    min_grain_size: int
+    min_grain_size: int,
 ) -> Tuple[int, np.ndarray, Dict[int, Dict[int, Tuple[Tuple[float, ...],int,Tuple[float, ...]]]]]:
     """
     Run one probabilistic flood fill segmentation.
@@ -158,6 +179,8 @@ def run_single_segmentation(
         Local similarity threshold.
     global_disorientation_tolerance : float
         Global similarity threshold.
+    footprint_tolerance : float
+        Footprint tolerance.
     max_iterations_per_single_run : int
         Max iterations of random seeds.
     min_grain_size : int
@@ -168,16 +191,36 @@ def run_single_segmentation(
     tuple
         (run_id, valid_labels, regions_features)
     """
-    np.random.seed(os.getpid() + int(time.time() * 1e6) % 2**32)
+    seed = (os.getpid() + int(time.time() * 1e6)) % (2**32 - 1)
+    np.random.seed(seed)
+
     working_mask = mask.copy()
-    seg, average_orientation_label_dict = flood_fill_random_seeds_2D(
-        property_map, 
-        mask=working_mask,
-        local_disorientation_tolerance=local_disorientation_tolerance,
-        global_disorientation_tolerance=global_disorientation_tolerance,
-        max_iterations=max_iterations_per_single_run,
-        min_grain_size=min_grain_size
+
+    if mask.ndim == 3:
+        seg, average_orientation_label_dict = flood_fill_random_seeds_3D(
+            property_map, 
+            mask=working_mask,
+            local_disorientation_tolerance=local_disorientation_tolerance,
+            global_disorientation_tolerance=global_disorientation_tolerance,
+            footprint_tolerance=footprint_tolerance,
+            footprint=footprint,
+            max_iterations=max_iterations_per_single_run,
+            min_grain_size=min_grain_size,
+            fill_holes=False
     )
+    elif mask.ndim == 2:
+        seg, average_orientation_label_dict = flood_fill_random_seeds_2D(
+            property_map, 
+            mask=working_mask,
+            footprint_tolerance=footprint_tolerance,
+            local_disorientation_tolerance=local_disorientation_tolerance,
+            global_disorientation_tolerance=global_disorientation_tolerance,
+            max_iterations=max_iterations_per_single_run,
+            min_grain_size=min_grain_size,
+            fill_holes=False
+        )
+    else:
+        raise ValueError(f"Property map must be 2D or 3D, but has {property_map.ndim} dimensions")
 
     valid_labels = seg[mask].astype(np.uint16)  # collapses to 1D    
 
@@ -188,6 +231,7 @@ def run_single_segmentation(
     for label_val, slc in enumerate(slices, start=1):
         if slc is None:
             continue
+        
         region = (label_img[slc] == label_val)
         size = np.count_nonzero(region)
         if size >= min_grain_size:
@@ -196,11 +240,14 @@ def run_single_segmentation(
             centroid = np.array(centroid) + offset
             area = np.count_nonzero(region)
             mean_orientation = average_orientation_label_dict[label_val]
-            regions_features[label_val] = centroid, area, mean_orientation
+            min_point = np.array([s.start for s in slc])
+            max_point = np.array([s.stop - 1 for s in slc]) 
+            bounding_box_points = np.concatenate((min_point, max_point))
+            regions_features[label_val] = centroid, area, mean_orientation, bounding_box_points
         else:
             print(f"Skipping label {label_val} with size {size}, which should not happen and there is a bug in flood_fill_random_seeds_2D")
-            
-    return run_id, valid_labels, regions_features
+    else:
+        return run_id, valid_labels, regions_features
 
 
 def run_segmentation_worker(args: Tuple[Any, ...]) -> Tuple[int, np.ndarray, Dict[int, Dict[int, Tuple[Tuple[float, ...],int,Tuple[float, ...]]]]]:
@@ -227,7 +274,7 @@ def run_segmentation_worker(args: Tuple[Any, ...]) -> Tuple[int, np.ndarray, Dic
 
 def cluster_and_update_centroids(
     regions_features_dict: Dict[int, Dict[int, Tuple[Tuple[float, ...],int,Tuple[float, ...]]]],
-    features_weights: Tuple[float, float,float] = (0.3, 1, 0.0),
+    features_weights: Tuple[float, float,float, float] = (0, 0, 0.0, 1.2),
     k_range: range = range(2, 100, 25),
     number_of_clusters: int = None,
     silhoutte_score: bool = False,
@@ -241,7 +288,7 @@ def cluster_and_update_centroids(
     regions_features_dict : dict
         {run_id: {label: (centroid, area)}}.
     features_weights : tuple, default=(0.3, 1, 0.0)
-        Weights for the features, first is position, second is orientation, third is area, area seems to be rather not benefitial
+        Weights for the features.
     k_range : range, default=range(2, 100, 25)
         Range for silhouette scoring.
     number_of_clusters : int, optional
@@ -262,26 +309,31 @@ def cluster_and_update_centroids(
     all_centroids = []
     all_areas = []
     all_mean_orientations = []
+    all_bounding_box_points = []
     centroid_keys = []
     for run_id, label_dict in regions_features_dict.items():
-        for label, (centroid, area, mean_orientation) in label_dict.items():
+        for label, (centroid, area, mean_orientation,bounding_box_points) in label_dict.items():
             centroid_keys.append((run_id, label))
             all_centroids.append(centroid)
             all_areas.append(area)
             all_mean_orientations.append(mean_orientation)
+            all_bounding_box_points.append(bounding_box_points)
 
     all_centroids = np.array(all_centroids)
     all_areas = np.array(all_areas)
     all_mean_orientations = np.array(all_mean_orientations)
+    all_bounding_box_points = np.array(all_bounding_box_points)
 
     all_centroids_scaled = safe_minmax_scale(all_centroids)
     area_scaled = safe_minmax_scale(all_areas, log_transform=True)
     all_mean_orientations_scaled = safe_minmax_scale(all_mean_orientations)
+    all_bounding_box_points_scaled = safe_minmax_scale(all_bounding_box_points)
 
     all_features_scaled = np.column_stack((
         all_centroids_scaled * features_weights[0],
         all_mean_orientations_scaled * features_weights[1],
-        area_scaled * features_weights[2]
+        area_scaled * features_weights[2],
+        all_bounding_box_points_scaled * features_weights[3]
     ))
     
 
@@ -315,14 +367,14 @@ def cluster_and_update_centroids(
     clustered_features_dict = {}
     for i, (run_id, label) in enumerate(centroid_keys):
         cluster_id = best_model.labels_[i]
-        original_centroid, _ , _ = regions_features_dict[run_id][label]
+        original_centroid, _ , _ ,_= regions_features_dict[run_id][label]
         clustered_features_dict.setdefault(run_id, {})[label] = (original_centroid, cluster_id)
 
     if silhoutte_score:
         return best_model, n_actual_clusters, clustered_features_dict, score_list
     else:
         return best_model, n_actual_clusters, clustered_features_dict
-
+    
 def compute_pixel_probabilities(
     label_matrix: np.ndarray,
     region_to_cluster: Dict[int, Dict[int, Tuple[float, ...]]],
