@@ -75,6 +75,7 @@ def flood_fill_random_seeds_2D(
     iteration = 0
     last_successfull_iteration = 0
 
+    mask = mask.copy() if mask is not None else mask
     if mask is None:
         m = footprint.shape[0] // 2
         n = footprint.shape[1] // 2
@@ -136,6 +137,42 @@ def flood_fill_random_seeds_3D(
     min_grain_size=200,
     verbose=False,
 ):
+    """
+    Perform flood fill on a 3D property map for random seeds .
+
+    Randomly samples new seed points within the allowed mask and 
+    segments regions that satisfy local and global misorientation thresholds.
+    Stops after `max_iterations`
+
+    Parameters
+    ----------
+    property_map : np.ndarray
+        Input 3D property map (Z, Y, X) or (Z, Y, X, C) for multichannel.
+    footprint : np.ndarray, default=None
+        Neighborhood structure for connectivity.
+    local_disorientation_tolerance : float, default=0.05
+        Local similarity threshold for region growing.
+    global_disorientation_tolerance : float, default=0.05
+        Global mean similarity threshold for region growing, if global tresheld is set so that it creates no boundary condition, a single flood fill run is unique.
+    mask : np.ndarray, optional
+        Binary mask restricting where seeds can be sampled and regions grown.
+        If None, a default mask with border exclusion is used.
+    fill_holes : bool, default=False
+        If True, fills holes inside each grain region, this is done before sampling the next region.
+    max_iterations : int, default=250
+        Maximum number of random seeds to try.
+    min_grain_size : int, default=200
+        Minimum accepted region size (voxels).
+    verbose : bool, default=False
+        Print iteration progress.
+
+    Returns
+    -------
+    segmentation : np.ndarray
+        Labeled segmentation map of same shape as input.
+    mean_orientation_label_dict : dict
+        Dictionary mapping labels to mean orientations.
+    """
     if footprint is None:
         footprint = ndimage.generate_binary_structure(3, 1)
         footprint[1, 1, 1] = 0  # remove center voxel
@@ -156,6 +193,7 @@ def flood_fill_random_seeds_3D(
     iteration = 0
 
     #Not the best for our limited Z range
+    mask = mask.copy() if mask is not None else mask
     if mask is None:
         mz, my, mx = np.array(footprint.shape) // 2
         mask = np.ones((Z, Y, X), dtype=bool)

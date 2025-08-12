@@ -17,8 +17,8 @@ It leverages parallel CPU processing to efficiently segment dislocation cells, e
 🔍 Key Features
 
 - Probabilistic segmentation: compute likelihood of modeled cells
-- Optimized for large-scale 2D data
-- Roadmap: 3D and 4D support in development
+- Optimized for large-scale 2D and 3D data
+- Roadmap: 4D support in development
 - Includes low-level and high-level API
 
 --------------------------------
