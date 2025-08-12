@@ -1,5 +1,18 @@
+"""
+This module contains functino for dislocation cells, they can be used for 2D and 3D segmentation, they are standalone functions that can be called with the input of a numpy array with n input channels.
+
+It contains the following functions:
+
+- flood_fill_random_seeds_2D
+- flood_fill_random_seeds_3D
+
+** we will add function for 4D flood fill and also add the original function from the nature paper "Observing formation and evolution of dislocation cells during plastic deformations**
+
+"""
+
+
 import numpy as np
-from scipy.ndimage import binary_fill_holes
+import scipy.ndimage as ndimage
 from typing import Optional
 
 from . import _flood_fill as flood_fill
@@ -11,6 +24,7 @@ def flood_fill_random_seeds_2D(
     footprint: np.ndarray = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]]),
     local_disorientation_tolerance: float = 0.05,
     global_disorientation_tolerance: float = 0.05,
+    footprint_tolerance: float = 0,
     mask: Optional[np.ndarray] = None,
     fill_holes: bool = False,
     max_iterations: int = 250,
@@ -34,6 +48,9 @@ def flood_fill_random_seeds_2D(
         Local similarity threshold for region growing.
     global_disorientation_tolerance : float, default=0.05
         Global mean similarity threshold for region growing.
+    footprint_tolerance : float, default=0
+        The footprint_tolerance works in the following way: If the tolerance is zero, we look within a footprint and if a single pixel/voxel is within the local/global threshold we grow, that voxel/pixel.
+        But what if we have only one element in the footprint that satisfies this condition. The footprint treshold adresses that and only pixel/voxels are added if the condition satiesfies for a number of voxels within the footprint.
     mask : np.ndarray, optional
         Binary mask restricting where seeds can be sampled and regions grown.
         If None, a default mask with border exclusion is used.
@@ -56,6 +73,7 @@ def flood_fill_random_seeds_2D(
     mean_orientation_label_dict = {}
     label = 1
     iteration = 0
+    last_successfull_iteration = 0
 
     if mask is None:
         m = footprint.shape[0] // 2
@@ -70,32 +88,113 @@ def flood_fill_random_seeds_2D(
     while iteration < max_iterations:
         rows, cols = np.where(mask & (segmentation == 0))
         if len(rows) == 0:
+            print(f"Everything is segmented at iteration: {iteration}, with the number of labels: {label}")
             break
 
         n_rand = np.random.randint(0, len(rows))
         seed_point = (rows[n_rand], cols[n_rand])
 
-        grain_mask, mean_orientation = flood_fill.flood_fill_2D_multichannel(
+        grain_mask, mean_orientation = flood_fill.flood_fill_2d_dfxm(
             property_map,
             seed_point,
             footprint,
             local_disorientation_tolerance,
             global_disorientation_tolerance,
+            footprint_tolerance,
             mask,
         )
 
         if fill_holes:
-            grain_mask = binary_fill_holes(grain_mask)
+            grain_mask = ndimage.binary_fill_holes(grain_mask)
 
         if np.sum(grain_mask) > min_grain_size:
             segmentation[grain_mask] = label
             mask[grain_mask] = False
             mean_orientation_label_dict[label] = mean_orientation
+            last_successfull_iteration = iteration
             label += 1
 
         iteration += 1
         if verbose:
             print(f"Iteration {iteration}: grain size = {np.sum(grain_mask)}")
+            
+    print(f"The last iteration were a grain was added at iteration: {last_successfull_iteration}")
+
+    return segmentation, mean_orientation_label_dict
+
+
+
+def flood_fill_random_seeds_3D(
+    property_map,
+    footprint=None,
+    local_disorientation_tolerance=0.05,
+    global_disorientation_tolerance=0.05,
+    mask=None,
+    footprint_tolerance= 0,
+    fill_holes=False,
+    max_iterations=250,
+    min_grain_size=200,
+    verbose=False,
+):
+    if footprint is None:
+        footprint = ndimage.generate_binary_structure(3, 1)
+        footprint[1, 1, 1] = 0  # remove center voxel
+
+    #footprint are odd in each direction
+    if footprint.shape[0] % 2 == 0 or footprint.shape[1] % 2 == 0 or footprint.shape[2] % 2 == 0:
+        raise ValueError(f"Footprint must be odd in each direction, current shape: {footprint.shape}" )
+
+    if property_map.ndim == 3:
+        property_map = property_map[..., np.newaxis]  # (Z, Y, X, C)
+    elif property_map.ndim != 4:
+        raise ValueError(f"property_map must be 3D or 4D, the current shape is {property_map.shape}")
+
+    Z, Y, X, _ = property_map.shape
+    segmentation = np.zeros((Z, Y, X), dtype=int)
+    mean_orientation_label_dict = {}
+    label = 1
+    iteration = 0
+
+    #Not the best for our limited Z range
+    if mask is None:
+        mz, my, mx = np.array(footprint.shape) // 2
+        mask = np.ones((Z, Y, X), dtype=bool)
+        mask[:mz] = mask[-mz:] = False
+        mask[:, :my] = mask[:, -my:] = False
+        mask[:, :, :mx] = mask[:, :, -mx:] = False
+
+
+    valid_voxels = np.where(mask)
+    voxel_list = list(zip(*valid_voxels))
+    #TODO need to set a seed for the random number generator, but its seed in the parallel code !
+    np.random.shuffle(voxel_list)  # Optional: shuffle for more randomness
+
+    while iteration < max_iterations:
+        
+        seed_point = voxel_list.pop()
+        if segmentation[seed_point] != 0:
+            continue
+        grain_mask, mean_orientation = flood_fill.flood_fill_3d_dfxm(
+            property_map,
+            seed_point,
+            footprint,
+            local_disorientation_tolerance,
+            global_disorientation_tolerance,
+            footprint_tolerance,
+            mask,
+        )
+
+        if fill_holes:
+            grain_mask = ndimage.binary_fill_holes(grain_mask)
+
+        if np.sum(grain_mask) > min_grain_size:
+            mean_orientation_label_dict[label] = mean_orientation
+            segmentation[grain_mask] = label
+            label += 1
+
+        if verbose:
+            print(f"Iter {iteration}: seed {seed_point} → {np.sum(grain_mask)} voxels")
+        iteration += 1
 
     return segmentation, mean_orientation_label_dict
 

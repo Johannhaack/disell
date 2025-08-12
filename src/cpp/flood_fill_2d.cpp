@@ -7,12 +7,13 @@
 namespace py = pybind11;
 
 
-py::tuple flood_fill_2D_multichannel(
+py::tuple flood_fill_2d_dfxm(
     py::array_t<float, py::array::c_style | py::array::forcecast> property_map,
     std::tuple<int, int> seed_point,
     py::array_t<bool, py::array::c_style | py::array::forcecast> footprint,
     float local_tolerance,
     float global_tolerance,
+    float footprint_tolerance,
     py::array_t<bool, py::array::c_style | py::array::forcecast> mask
 ) {
     // Get array info
@@ -73,62 +74,74 @@ py::tuple flood_fill_2D_multichannel(
     int count = 1;
     std::queue<std::pair<int, int>> queue;
     queue.push({i, j});
-    
+
+    // Preallocate containers for group logic
+    std::vector<std::pair<int, int>> inner_queue;
+    std::vector<double> total_inner(C, 0.0);
+    std::vector<double> mean_inner(C, 0.0);
+    std::vector<double> center_val(C, 0.0);
+
     while (!queue.empty()) {
         auto [curr_i, curr_j] = queue.front();
         queue.pop();
-        
-        // Iterate through footprint
+
+        // Reset containers
+        inner_queue.clear();
+        std::fill(total_inner.begin(), total_inner.end(), 0.0);
+        mean_inner = mean_val;
+        int count_inner = 0;
+        int footprint_valid_voxels = 0;
+
+        // Load center values once
+        for (int c = 0; c < C; ++c)
+            center_val[c] = static_cast<double>(prop_ptr[curr_i * W * C + curr_j * C + c]);
+
         for (int dk = 0; dk < foot_h; ++dk) {
             for (int dl = 0; dl < foot_w; ++dl) {
-                if (!foot_ptr[dk * foot_w + dl]) {
-                    continue;
-                }
-                
-                const int row = curr_i - m + dk;
-                const int col = curr_j - n + dl;
-                
-                // Check bounds
+                if (!foot_ptr[dk * foot_w + dl]) continue;
+
+                int row = curr_i - m + dk;
+                int col = curr_j - n + dl;
+
                 if (row >= 0 && row < H && col >= 0 && col < W) {
-                    const int idx = row * W + col;
-                    
+                    int idx = row * W + col;
                     if (!res_ptr[idx] && mask_ptr[idx]) {
-                        // Calculate local difference (compared to current center)
-                        double local_diff = 0.0;
+                        footprint_valid_voxels++;
+                        // Compute differences
+                        double local_diff = 0.0, global_diff = 0.0;
                         for (int c = 0; c < C; ++c) {
-                            const double curr_val = static_cast<double>(prop_ptr[curr_i * W * C + curr_j * C + c]);
-                            const double test_val = static_cast<double>(prop_ptr[row * W * C + col * C + c]);
-                            local_diff += std::abs(test_val - curr_val);
+                            double test_val = static_cast<double>(prop_ptr[row * W * C + col * C + c]);
+                            local_diff += std::abs(test_val - center_val[c]);
                         }
                         local_diff /= C;
-                        
-                        // Calculate global difference (compared to running mean)
-                        double global_diff = 0.0;
+
                         for (int c = 0; c < C; ++c) {
-                            const double test_val = static_cast<double>(prop_ptr[row * W * C + col * C + c]);
-                            global_diff += std::abs(test_val - mean_val[c]);
+                            double test_val = static_cast<double>(prop_ptr[row * W * C + col * C + c]);
+                            global_diff += std::abs(test_val - mean_inner[c]);
                         }
                         global_diff /= C;
-                        
-                        // Check tolerances
+
                         if (local_diff < local_tolerance && global_diff < global_tolerance) {
-                            res_ptr[idx] = true;
-                            queue.push({row, col});
-                            
-                            // Update running statistics
-                            for (int c = 0; c < C; ++c) {
-                                total[c] += static_cast<double>(prop_ptr[row * W * C + col * C + c]);
-                            }
-                            count++;
-                            
-                            // Update mean
-                            for (int c = 0; c < C; ++c) {
-                                mean_val[c] = total[c] / count;
-                            }
+                            inner_queue.emplace_back(row, col);
+                            for (int c = 0; c < C; ++c)
+                                total_inner[c] += static_cast<double>(prop_ptr[row * W * C + col * C + c]);
+                            count_inner++;
                         }
                     }
                 }
             }
+        }
+
+        if (footprint_valid_voxels > 0 && static_cast<float>(count_inner) / footprint_valid_voxels > footprint_tolerance) {
+            // Accept group: add to queue and update stats
+            for (const auto& [row, col] : inner_queue) {
+                int idx = row * W + col;
+                res_ptr[idx] = true;
+                queue.push({row, col});
+            }
+            for (int c = 0; c < C; ++c) total[c] += total_inner[c];
+            count += count_inner;
+            for (int c = 0; c < C; ++c) mean_val[c] = total[c] / count;
         }
     }
 

@@ -16,7 +16,7 @@ struct CoordHash {
     }
 };
 
-py::array_t<bool> flood_fill_incremental_mean_3D_optimized(
+py::tuple flood_fill_3d_dfxm(
     py::array_t<float, py::array::c_style | py::array::forcecast> property_map,
     std::tuple<int, int, int> seed_point,
     py::array_t<bool, py::array::c_style | py::array::forcecast> footprint,
@@ -58,13 +58,11 @@ py::array_t<bool> flood_fill_incremental_mean_3D_optimized(
     std::vector<std::tuple<int, int, int>> footprint_offsets;
     footprint_offsets.reserve(fz * fy * fx); // Pre-allocate
     
-    int footprint_sum = 0;
     for (int dz = 0; dz < fz; ++dz) {
         for (int dy = 0; dy < fy; ++dy) {
             for (int dx = 0; dx < fx; ++dx) {
                 if (buf_foot(dz, dy, dx)) {
                     footprint_offsets.emplace_back(dz - mz, dy - my, dx - mx);
-                    ++footprint_sum;
                 }
             }
         }
@@ -108,8 +106,7 @@ py::array_t<bool> flood_fill_incremental_mean_3D_optimized(
         std::fill(total_inner.begin(), total_inner.end(), 0.0);
         int count_inner = 0;
         mean_inner = mean_val;
-        int footprint_count = 0;
-
+        int valid_voxels_footprint = 0;
         // Use pre-computed offsets
         for (const auto& [dz, dy, dx] : footprint_offsets) {
             int ni = i + dz;
@@ -118,8 +115,8 @@ py::array_t<bool> flood_fill_incremental_mean_3D_optimized(
             
             // Bounds check
             if (ni < 0 || nj < 0 || nk < 0 || ni >= Z || nj >= Y || nk >= X) continue;
-            if (buf_flood(ni, nj, nk) || !buf_mask(ni, nj, nk)) continue;
-
+            if (buf_flood(ni, nj, nk) || !buf_mask(ni, nj, nk))continue;
+            valid_voxels_footprint += 1;
             // Load neighbor values
             float local_diff = 0.0f, global_diff = 0.0f;
             for (int c = 0; c < C; ++c) {
@@ -139,7 +136,6 @@ py::array_t<bool> flood_fill_incremental_mean_3D_optimized(
                     total_inner[c] += val[c];
                 }
                 ++count_inner;
-                ++footprint_count;
 
                 // Update mean incrementally for better numerical stability
                 const double inv_total_count = 1.0 / (count_inner + count);
@@ -150,7 +146,7 @@ py::array_t<bool> flood_fill_incremental_mean_3D_optimized(
         }
 
         // Check footprint tolerance
-        if (footprint_sum == 0 || static_cast<float>(footprint_count) / footprint_sum > footprint_tolerance) {
+        if (valid_voxels_footprint == 0 || static_cast<float>(count_inner) / valid_voxels_footprint > footprint_tolerance) {
             // Accept all points in inner_queue
             for (const auto& [ni, nj, nk] : inner_queue) {
                 buf_flood(ni, nj, nk) = true;
@@ -171,6 +167,16 @@ py::array_t<bool> flood_fill_incremental_mean_3D_optimized(
         }
     }
 
-    return flood_mask;
+    // Convert mean_val vector to py::array
+    auto mean_orientation = py::array_t<double>(C);
+    auto mean_buf = mean_orientation.request();
+    double* mean_ptr = static_cast<double*>(mean_buf.ptr);
+
+    for (int c = 0; c < C; ++c) {
+        mean_ptr[c] = static_cast<double>(mean_val[c]);
+    }
+
+    // Return tuple: (mask, mean orientation)
+    return py::make_tuple(flood_mask, mean_orientation);
 }
 
