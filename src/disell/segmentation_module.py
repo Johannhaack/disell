@@ -5,8 +5,9 @@ It contains the following functions:
 
 - flood_fill_random_seeds_2D
 - flood_fill_random_seeds_3D
+- cell_opening_model_2D
 
-** we will add function for 4D flood fill and also add the original function from the nature paper "Observing formation and evolution of dislocation cells during plastic deformations**
+** we will add function for 4D flood fill**
 
 """
 
@@ -14,6 +15,8 @@ It contains the following functions:
 import numpy as np
 import scipy.ndimage as ndimage
 from typing import Optional
+from skimage.morphology import ball, disk, binary_erosion, binary_dilation, skeletonize
+from skimage.measure import label, regionprops
 
 from . import _flood_fill as flood_fill
 
@@ -123,8 +126,6 @@ def flood_fill_random_seeds_2D(
 
     return segmentation, mean_orientation_label_dict
 
-
-
 def flood_fill_random_seeds_3D(
     property_map,
     footprint=None,
@@ -174,7 +175,7 @@ def flood_fill_random_seeds_3D(
         Dictionary mapping labels to mean orientations.
     """
     if footprint is None:
-        footprint = ndimage.generate_binary_structure(3, 1)
+        footprint = ndimage.generate_binary_structure(3, 3)
         footprint[1, 1, 1] = 0  # remove center voxel
 
     #footprint are odd in each direction
@@ -236,3 +237,203 @@ def flood_fill_random_seeds_3D(
 
     return segmentation, mean_orientation_label_dict
 
+
+def cell_opening_model_2D(single_channel_input,  mask,overtreshold_value=0.71, min_cell_size=10, max_cell_size=4000):
+
+    """
+    Detect and segment 2-D dislocation cells from a single-feature map - this is often KAM.
+
+    This function can't be extended to 3D for that see: Thesis of Johann Haack - "Assessment and Development of Dislocation Cell Models for Dark Field X-ray Microscopy"
+
+    Parameters
+    ----------
+    single_channel_input : ndarray, shape (H, W)
+        Map of scalar feature values (e.g. KAM) giving likelihood of a cell wall.
+    mask : ndarray of bool, shape (H, W)
+        Binary mask restricting the analysis region.
+    overtreshold_value : float, optional
+        Fraction (0–1). Keep pixels inside the top (1−value) percentile.
+        Example: From the paper "Observing formation and evolution of dislocation cells during plastic deformation" by Albert Zelenika, Adam André William Cretton,... we use 0.71
+    min_cell_size : int, optional
+        Minimum region size (pixels) to keep.
+    max_cell_size : int, optional
+        Maximum region size (pixels) to keep.
+
+    Returns
+    -------
+    regions : list of skimage.measure._regionprops.RegionProperties
+        All connected regions in the inverted skeleton (before filtering).
+    filtered_regions : list of RegionProperties
+        Regions remaining after mask and size filtering.
+    labeled_array : ndarray of int, shape (H, W)
+        Label image of all connected regions before filtering.
+    labelimage_filtered : ndarray of int, shape (H, W)
+        Label image containing only the filtered regions.
+    overtreshold : ndarray of bool, shape (H, W)
+        Boolean mask of pixels above the percentile threshold.
+    skel : ndarray of bool, shape (H, W)
+        Skeletonized cell-wall network.
+
+    Notes
+    -----
+    - Wraps the lower-level functions `overtreshold_skeletonize`
+      and `labelimage_2_regions_filtering`.
+    - Use `filtered_regions` or `labelimage_filtered` as input to
+      misorientation or cell-size statistics.
+
+    Example
+    -------
+    regions, filtered_regions, labeled_array, labelimage_filtered, overtreshold, skel = cell_opening_model_2D(kam, grain_mask, 0.7)
+    """
+    #the 1GMM COmponent is not smoothed yert so we might need to do that 
+
+    overtreshold, _, _, skel = overtreshold_skeletonize(single_channel_input, mask, overtreshold_value)
+
+    #Run connected components with ndlabel, return that dictionary, that should be input to misorientation and cell size distribution
+    if not np.any(skel):
+        return None, None, None, None, None
+    labeled_array, _ = label(~skel)
+
+    regions = regionprops(labeled_array)
+
+    filtered_regions,_, labeled_array,labelimage_filtered, skel = labelimage_2_regions_filtering(labeled_array, mask, min_cell_size=min_cell_size, max_cell_size=max_cell_size)
+
+    return regions, filtered_regions, labeled_array, labelimage_filtered, overtreshold, skel
+
+def overtreshold_skeletonize(KAM, grain_mask, treshold = 0.7, three_d=False):
+
+    """
+    Threshold and skeletonize a KAM-like map inside a mask.
+
+    Parameters
+    ----------
+    KAM : ndarray
+        Input scalar field (2-D or 3-D) giving cell-wall likelihood.
+    grain_mask : ndarray of bool
+        Same shape as KAM. Defines the region of interest.
+    treshold : float, optional
+        Fraction (0–1). Keep pixels in the top (1−treshold) percentile
+        of KAM inside the mask.
+    three_d : bool, optional
+        If True, treat data as 3-D and skeletonize each slice.
+
+    Returns
+    -------
+    overtreshold : ndarray of bool
+        Pixels above the percentile threshold.
+    overtreshold_mask_erosion : ndarray of bool
+        Eroded version of overtreshold.
+    overtreshold_mask_dilation : ndarray of bool
+        Dilated (smoothed) version of the erosion.
+    skel_KAM : ndarray of bool
+        Skeleton of the refined mask.
+
+    Raises
+    ------
+    ValueError
+        If KAM and grain_mask have different shapes.
+    """
+    if KAM.shape != grain_mask.shape:
+        raise ValueError("The images must have the same shape")
+    
+    # Check that the mask has valid values (0 and 1)
+    if not np.any(grain_mask):  # Check if mask contains any non-zero values
+        return grain_mask, None, None, None
+
+    
+    treshold = (1- treshold)*100
+    # Extract values inside the mask
+    masked_values = KAM[grain_mask.astype(bool)]
+
+    # Find the 30th percentile (since you want to keep top 70%)
+    threshold_value = np.percentile(masked_values, treshold)
+
+    # Apply threshold: True for top 70% inside the mask
+    overtreshold = (KAM >= threshold_value) & (grain_mask.astype(bool))
+    
+    # Morphological operations
+    if three_d:
+        se = ball(1)
+    else:
+        se = disk(1)
+
+    overtreshold_mask_erosion = binary_erosion(overtreshold, se)
+    overtreshold_mask_dilation = binary_dilation(overtreshold_mask_erosion, se)
+    
+    # Skeletonize the refined KAM mask
+    if three_d == True:
+        skel_KAM = np.zeros_like(overtreshold_mask_dilation)
+        for i in range(overtreshold_mask_dilation.shape[0]):
+            skel_KAM[i,:,:] = (skeletonize(overtreshold_mask_dilation[i]))
+    else:
+        skel_KAM = skeletonize(overtreshold_mask_dilation)
+
+
+    return overtreshold, overtreshold_mask_erosion, overtreshold_mask_dilation, skel_KAM
+
+def labelimage_2_regions_filtering(labelimage, mask, min_cell_size=10, max_cell_size=4000):
+
+    """
+    Filter labeled regions by mask overlap and size.
+
+    Parameters
+    ----------
+    labelimage : ndarray of int, shape (H, W)
+        Labeled connected components.
+    mask : ndarray of bool, shape (H, W)
+        Valid area; regions overlapping the outside are rejected.
+    min_cell_size : int, optional
+        Minimum size (pixels) for a region to be kept.
+    max_cell_size : int, optional
+        Maximum size (pixels) for a region to be kept.
+
+    Returns
+    -------
+    filtered_regions : list of RegionProperties
+        Regions passing mask and size tests.
+    regions : list of RegionProperties
+        All initial regions.
+    labelimage : ndarray of int
+        Input label image (returned unchanged).
+    labelimage_filtered : ndarray of int
+        New label image containing only filtered regions.
+    skeleton : ndarray of bool
+        Boolean array where 0-label pixels form the background skeleton.
+    """
+
+    regions = regionprops(labelimage)
+    filtered_regions = []
+    for region in regions:
+        coords = region.coords
+        overlap = np.any(~mask[coords[:, 0], coords[:, 1]])
+        if not overlap and region.area >= min_cell_size and region.area <= max_cell_size:
+            filtered_regions.append(region)
+
+
+    skeleton = labelimage ==0
+    labelimage_filtered = regions_to_labelimage(filtered_regions, labelimage.shape)
+
+    return filtered_regions, regions, labelimage, labelimage_filtered, skeleton
+
+def regions_to_labelimage(filtered_regions, shape):
+    """
+    Convert a list of RegionProperties to a label image.
+
+    Parameters
+    ----------
+    filtered_regions : list of RegionProperties
+        Regions to encode as labeled integers.
+    shape : tuple of int
+        Desired output shape (H, W).
+
+    Returns
+    -------
+    labelimage : ndarray of int
+        Label image where each filtered region is assigned a unique
+        label starting at 1.
+    """
+    labelimage = np.zeros(shape, dtype=np.int32)
+    for i, region in enumerate(filtered_regions, start=1):
+        coords = region.coords
+        labelimage[coords[:, 0], coords[:, 1]] = i
+    return labelimage

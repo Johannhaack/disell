@@ -9,6 +9,7 @@ import os
 import time
 from skimage import measure
 from scipy import ndimage
+import hdbscan
 from .segmentation_module import flood_fill_random_seeds_2D, flood_fill_random_seeds_3D
 
 
@@ -62,8 +63,8 @@ def run_segmentations_parallel(
             USed to later get back the 1D array to the 2D size, its a good memory saving option.
     """
     #Check if mask and property match
-    if mask.ndim != property_map.ndim:
-        raise ValueError(f"Mask and property map must have the same number of dimensions, but have {mask.ndim} and {property_map.ndim} dimensions, with property map having shape: {property_map.shape} and mask having shape: {mask.shape}")
+    if mask.shape != property_map.shape[:-1]:
+        raise ValueError(f"Mask and property map must have the same shape, but have {mask.shape[:-1]} and {property_map.shape[:-1]} dimensions, with property map having shape: {property_map.shape} and mask having shape: {mask.shape}")
     
     if n_jobs is None:
         n_jobs = mp.cpu_count()
@@ -245,7 +246,7 @@ def run_single_segmentation(
             bounding_box_points = np.concatenate((min_point, max_point))
             regions_features[label_val] = centroid, area, mean_orientation, bounding_box_points
         else:
-            print(f"Skipping label {label_val} with size {size}, which should not happen and there is a bug in flood_fill_random_seeds_2D")
+            print(f"Skipping label {label_val} with size {size}, which should not happen, check for more details in the documentation")
     else:
         return run_id, valid_labels, regions_features
 
@@ -374,6 +375,91 @@ def cluster_and_update_centroids(
         return best_model, n_actual_clusters, clustered_features_dict, score_list
     else:
         return best_model, n_actual_clusters, clustered_features_dict
+    
+
+def cluster_and_update_centroids_hdbscan(
+    regions_features_dict: Dict[int, Dict[int, Tuple[Tuple[float, ...], int, Tuple[float, ...]]]],
+    features_weights: Tuple[float, float,float,float] = (0, 0.3, 0.0, 1.2),
+    min_cluster_size: int = 5,
+    min_samples: int = None,
+    verbose: bool = False
+) -> Tuple[hdbscan.HDBSCAN, int, Dict[int, Dict[int, Tuple[float, ...]]]]:
+    """
+    Cluster region centroids using HDBSCAN and assign cluster IDs.
+
+    Parameters
+    ----------
+    regions_features_dict : dict
+        {run_id: {label: (centroid, area, mean_orientation)}}.
+    min_cluster_size : int, default=5
+        Smallest size for a cluster.
+    min_samples : int, optional
+        Controls conservativeness of clustering. If None, equals min_cluster_size.
+    verbose : bool, default=False
+
+    Returns
+    -------
+    tuple
+        (hdbscan_model, n_clusters, clustered_features_dict)
+    """
+    all_centroids = []
+    all_areas = []
+    all_mean_orientations = []
+    all_bounding_box_points = []
+    centroid_keys = []
+
+    for run_id, label_dict in regions_features_dict.items():
+        for label, (centroid, area, mean_orientation, bounding_box_points) in label_dict.items():
+            centroid_keys.append((run_id, label))
+            all_centroids.append(centroid)
+            all_areas.append(area)
+            all_mean_orientations.append(mean_orientation)
+            all_bounding_box_points.append(bounding_box_points)
+
+    all_centroids = np.array(all_centroids)
+    all_areas = np.array(all_areas)
+    all_mean_orientations = np.array(all_mean_orientations)
+    all_bounding_box_points = np.array(all_bounding_box_points)
+
+    # Scale features
+    all_centroids_scaled = safe_minmax_scale(all_centroids)
+    all_mean_orientations_scaled = safe_minmax_scale(all_mean_orientations)
+    all_bounding_box_points_scaled = safe_minmax_scale(all_bounding_box_points)
+    # Optionally: area
+    area_scaled = safe_minmax_scale(all_areas, log_transform=True)
+
+    all_features_scaled = np.column_stack((
+        all_centroids_scaled*features_weights[0],
+        all_mean_orientations_scaled*features_weights[1],
+        area_scaled*features_weights[2],
+        all_bounding_box_points_scaled*features_weights[3]
+    ))
+
+    if verbose:
+        print(f"All features shape: {all_features_scaled.shape}")
+
+    # Build and run HDBSCAN
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples if min_samples is not None else min_cluster_size
+    )
+    labels = clusterer.fit_predict(all_features_scaled)
+
+    n_actual_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+
+    if verbose:
+        n_noise = np.sum(labels == -1)
+        print(f"HDBSCAN found {n_actual_clusters} clusters, {n_noise} noise points.")
+        print(f"Cluster persistence: {clusterer.cluster_persistence_}")
+
+    # Build dict
+    clustered_features_dict = {}
+    for i, (run_id, label) in enumerate(centroid_keys):
+        cluster_id = labels[i]  # -1 = noise
+        original_centroid, area, mean_orientation, bounding_box_points = regions_features_dict[run_id][label]
+        clustered_features_dict.setdefault(run_id, {})[label] = (original_centroid, cluster_id)
+
+    return clusterer, n_actual_clusters, clustered_features_dict
     
 def compute_pixel_probabilities(
     label_matrix: np.ndarray,

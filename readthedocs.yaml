@@ -6,6 +6,9 @@ build:
   tools:
     python: "3.11"
 
+only:
+  tags: true    
+
 python:
   install:
     - requirements: docs/requirements.txt

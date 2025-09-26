@@ -102,6 +102,9 @@ def apply_4D_transforms(volumes, transforms, pad_value=-1e10):
 
 
 #########################
+
+#TODO: write test for these registration functions
+
 #We know the above works i refactored with AI to do 3D and 4D Dimensions
 
 def register(volumes: np.ndarray, registration_channel=-1, verbose=False):
