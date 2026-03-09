@@ -1,112 +1,74 @@
 from skimage.registration import phase_cross_correlation
 from scipy.ndimage import shift as ndi_shift
 import numpy as np
+from skimage.feature import match_template
 
 
-def register_4D_volumes(volumes, registration_channel=-1, mask=None, verbose=False):
+def register_slice_2_volume(slice_2d, ref_vol):
     """
-        Register a sequence of 4D volumes (T, Z, X, Y, C) along the time axis using phase correlation.
+    Register a 2D slice to a 3D reference volume by maximizing normalized
+    cross-correlation along the z-axis.
 
-        Parameters
-        ----------
-        volumes : np.ndarray
-            Input volume of shape (T, Z, X, Y, C), where T is time and C is the feature/channel dimension.
-        registration_channel : int, optional
-            Index of the feature channel used for alignment (default: -1 = last channel).
-        verbose : bool, optional
-            If True, prints alignment progress and estimated shift vectors.
+    Parameters
+    ----------
+    slice_2d : np.ndarray (Y, X)
+        The 2D slice to be aligned.
+    ref_vol : np.ndarray (Z, Y, X)
+        The reference volume.
 
-        Returns
-        -------
-        transforms : list of tuple or None
-            List of length T with (dz, dx, dy) shift vectors per time point,
-            or None for the reference time index (middle of T).
-        """
-    T, Z, X, Y, C = volumes.shape
-    volumes_normalized = (volumes - np.nanmin(volumes)) / (np.nanmax(volumes) - np.nanmin(volumes) + 1e-8)
+    Returns
+    -------
+    corr_list : np.ndarray (Z,)
+        Correlation score for each z-position.
+    max_index : int
+        The z-index with highest correlation.
 
-    ref_idx = T // 2 
-    reference_volume = volumes_normalized[ref_idx, :, :, :, :]  # shape (Z, X, Y, F)
+    Notes
+    -----
+    The slice and each volume plane are standardized before computing the
+    correlation. `match_template` is used internally for robustness.
 
-    transforms = []
+    Examples
+    --------
+    >>> # Preprocessing example
+    >>> features = darling.properties.gaussian_mixture(dset_slice.data, k=2,
+    ...                                                coordinates=dset_slice.motors)
+    >>> share = features["sum_intensity"][..., 0] / (
+    ...         features["sum_intensity"][..., 0]
+    ...       + features["sum_intensity"][..., 1]
+    ...       + 1e-8)
+    >>>
+    >>> corr, idx = register_slice_2_volume(share, share_volume)
+    """
 
-    for t in range(T):
-        if t == ref_idx:
-            transforms.append(None)
-            continue
+    Z, Y, X = ref_vol.shape
+    s = slice_2d.astype(np.float32)
 
-        if verbose:
-            print(f"Aligning volume {t} of {T}")
+    #normalize slice
+    s = (s - s.mean()) / (s.std() + 1e-8)
 
-        # Use first feature channel for registration
-        ref_feat = np.nan_to_num(reference_volume[..., registration_channel], nan=0.0)
-        mov_feat = np.nan_to_num(volumes_normalized[t, :, :, :, registration_channel], nan=0.0)
+    z_candidates = np.arange(0, Z, 1.0)
 
-        # Phase correlation
-        shift_vec, error, _ = phase_cross_correlation(ref_feat, mov_feat, upsample_factor=1)
-        if verbose:
-            print(f"Estimated shift (Z, X, Y): {shift_vec}")
-        transforms.append(shift_vec)
+    corr_list = []
+    for zf in z_candidates:
+        plane = ref_vol[int(zf)].astype(np.float32)
+        #Normalize plane
+        plane = (plane - plane.mean()) / (plane.std() + 1e-8)
 
-    return transforms
+        resp = match_template(plane, s, pad_input=True)
+        corr = resp.max()
+        corr_list.append(corr)
 
-def apply_4D_transforms(volumes, transforms, pad_value=-1e10):
-    """"
-        Apply spatial shifts to a time series of 4D volumes using precomputed transforms.
+    corr_list = np.array(corr_list)
+    max_index = np.argmax(corr_list)
 
-        Parameters
-        ----------
-        volumes : np.ndarray
-            Input array of shape (T, Z, X, Y, C), where T is time and C is the number of channels/features.
-        transforms : list of tuple or None
-            List of shift vectors (dz, dx, dy) corresponding to each time point.
-            Use None for the reference frame (i.e., no shift applied).
-        pad_value : float, optional
-            Constant value used to pad along the Z dimension and to mark invalid/shifted-out voxels (default: -1e10).
+    return corr_list, max_index
 
-        Returns
-        -------
-        aligned_volumes : np.ndarray
-            Output array of same shape as input (internally padded in Z),
-            with applied shifts and shifted-out regions set to NaN.
-        """
-
-    T, Z, X, Y, C = volumes.shape
-
-    # Compute max Z padding needed
-    max_z_pad = max(int(np.ceil(abs(shift[0]))) if shift is not None else 0 for shift in transforms)
-
-    # Pad volumes in Z
-    volumes_padded = np.pad(volumes,pad_width=((0, 0), (max_z_pad, max_z_pad), (0, 0), (0, 0), (0, 0)),mode='constant',constant_values=pad_value)
-
-
-    aligned_volumes = np.empty_like(volumes_padded)
-
-    for t in range(aligned_volumes.shape[0]):
-        if transforms[t] is None:
-            ref_volume = np.where(volumes_padded[t] == pad_value, np.nan, volumes_padded[t])
-            aligned_volumes[t] = ref_volume
-            continue
-
-        shift_vec = transforms[t]
-        for c in range(C):
-            vol_to_shift = volumes_padded[t, :, :, :, c]
-            shifted = ndi_shift(vol_to_shift, shift=shift_vec, order=1, mode='constant',cval= pad_value)
-            # Handle fill value to NaN if needed
-            shifted = np.where(shifted == pad_value, np.nan, shifted)
-            
-            aligned_volumes[t, :, :, :, c] = shifted
-
-    return aligned_volumes
-
-
-
-#########################
-#We know the above works i refactored with AI to do 3D and 4D Dimensions
 
 def register(volumes: np.ndarray, registration_channel=-1, verbose=False):
     """
     Register a time series of volumes (T, ..., C) using phase correlation.
+    T can also be interpreted as z when aligning slices.
 
     Parameters
     ----------
@@ -121,6 +83,11 @@ def register(volumes: np.ndarray, registration_channel=-1, verbose=False):
     -------
     List[tuple or None]
         List of shift vectors, one per time point. `None` for reference frame.
+
+    Notes
+    -----
+    The registration does not work properly if there is too many nan values in the data.
+    So it is not advised to use it on volumes with large padding in the z-direction.
     """
     T = volumes.shape[0]
     ref_idx = T // 2
@@ -158,7 +125,7 @@ def apply_transforms(volumes: np.ndarray, transforms, pad_value=-1e10):
     Returns
     -------
     np.ndarray
-        Shifted and aligned volumes with same shape as input. Out-of-bounds values are NaN.
+        Shifted and aligned volumes with same shape as input. The data is homogenous by padding around the shifts.
     """
     T, *spatial_dims, C = volumes.shape
     ndim = len(spatial_dims)

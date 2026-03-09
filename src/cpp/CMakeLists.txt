@@ -6,7 +6,6 @@ find_package(pybind11 REQUIRED)
 # Add your extension module, including all relevant sources
 pybind11_add_module(_flood_fill
     bindings.cpp
-    flood_fill_2d.cpp
     flood_fill_3d.cpp
 )
 

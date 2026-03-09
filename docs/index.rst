@@ -16,16 +16,14 @@ It leverages parallel CPU processing to efficiently segment dislocation cells, e
 --------------------------------
 🔍 Key Features
 
-- Probabilistic segmentation: compute likelihood of modeled cells
-- Optimized for large-scale 2D and 3D data
-- Roadmap: 4D support in development
-- Includes low-level and high-level API
+- Methods to identify Dislocation Cells in 2D and 3D 
+- Methods to grow these structures into full segmentation mask of the image/volume 
 
 --------------------------------
 🚀 How to Use
 
-Use the `SegmentationDataset` class for a structured workflow.  
-For custom pipelines, call the low-level segmentation and registration functions directly.
+There is a two level approach first using the methods in cell_idetification.py initial regions of dislocation cells are idetified for this paramter tuning is needed.
+In the second level using methods in region_growing.py the initial cells are used to provide a full segmentation mask.
 
 --------------------------------
 

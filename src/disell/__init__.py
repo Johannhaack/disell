@@ -1,7 +1,7 @@
 from .segmentation_module import flood_fill_random_seeds_2D
 
 from .flood_fill_probabilities import (
-    run_segmentations_parallel,
+    flood_fill_parallel_segmentation,
     cluster_and_update_centroids,
     compute_pixel_probabilities,
 )
@@ -16,7 +16,7 @@ from ._flood_fill import *  # or * if you want all
 
 __all__ = [
     "flood_fill_random_seeds_2D",
-    "run_segmentations_parallel",
+    "flood_fill_parallel_segmentation",
     "cluster_and_update_centroids",
     "compute_pixel_probabilities",
     "register",
