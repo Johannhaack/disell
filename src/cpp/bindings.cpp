@@ -23,7 +23,7 @@ py::dict flood_fill_collect_seeds(
     float footprint_tolerance,
     py::object mask_obj,
     int max_iterations,
-    int min_grain_size,
+    int min_grain_size
 );
 
 PYBIND11_MODULE(flood_fill, m) {
