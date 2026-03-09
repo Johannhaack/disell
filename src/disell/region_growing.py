@@ -4,7 +4,6 @@ In this script we implement different region growing alghorithmens, which are us
 The different alghoritms are:
 - region_grow_minimum_cell_orientation_differences:  this also inclusdes a mnumby implemenation of a priority queue
 - a water shed based alghorithmen on the locla cell orientation differences 
-- region_grow_multilabel_graphcut_2d: A graph cut approach using pycgo, which enables a trade betwenn data fadility and smooth curves, right now works onl yfor about 100 seeds !!!
 
 
 Numba based priority queue implementation is based on:

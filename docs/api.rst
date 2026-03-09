@@ -1,26 +1,38 @@
 API Reference
 =============
 
-SegmentationDataset
+Cell Identification
 -------------------
 
-.. automodule:: disell.SegmentationDataset
+.. automodule:: disell.cell_identification
    :members:
 
-Flood Fill Probabilities
-------------------------
+Cell Statistics
+---------------
 
-.. automodule:: disell.flood_fill_probabilities
+.. automodule:: disell.cell_statistics
    :members:
 
-Segmentation Module
--------------------
+Properties
+----------
 
-.. automodule:: disell.segmentation_module
+.. automodule:: disell.properties
+   :members:
+
+Region Growing
+--------------
+
+.. automodule:: disell.region_growing
    :members:
 
 Registration
 ------------
 
 .. automodule:: disell.registration
+   :members:
+
+Visualization
+-------------
+
+.. automodule:: disell.visualization
    :members:
