@@ -12,43 +12,6 @@
 
 namespace py = pybind11;
 
-
-#include <chrono>
-#include <fstream>
-
-static std::ofstream timing_log("timing.log", std::ios::app);
-
-//have var for adding the time to
-double single_flood_fill_time = 0.0;
-double setup_time_loop = 0.0;
-double post_flood_fill_while_time = 0.0;
-
-#define TICK(name) \
-    auto __t_start_##name = std::chrono::high_resolution_clock::now();
-
-#define TOCK(name, var) \
-    do { \
-        auto __t_end_##name = std::chrono::high_resolution_clock::now(); \
-        double ms = std::chrono::duration<double,std::milli>(__t_end_##name - __t_start_##name).count(); \
-        var += ms; \
-    } while(0)
-
-
-#define TOCK_ACC(var, label) \
-    do { \
-        timing_log << (label) << ": " << (var) << " ms\n"; \
-        timing_log.flush(); \
-    } while(0)
-
-#define TOCK_PRINT(name) \
-    do { \
-        auto __t_end_##name = std::chrono::high_resolution_clock::now(); \
-        double ms = std::chrono::duration<double,std::milli>(__t_end_##name - __t_start_##name).count(); \
-        timing_log << #name << ": " << ms << " ms\n"; \
-        timing_log.flush(); \
-    } while(0)
-
-
 // ------------------- offset struct -------------------
 struct Offset3D {
     int dz, dy, dx;
@@ -171,9 +134,7 @@ py::dict flood_fill_random_seeds_3d(
     bool recycle_small_grains,
     int stagnation_tolerance,
     py::object seed_points_obj = py::none()
-
 ) {
-    TICK(setup);
     // ---- property_map checks ----
     auto pbuf = property_map.request();
     if (pbuf.ndim != 4)
@@ -302,12 +263,10 @@ py::dict flood_fill_random_seeds_3d(
         position_in_remaining[idx_to_remove] = (size_t)-1;
     };
 
-    TOCK_PRINT(setup);
     // ================================================================
     //               MAIN LOOP (unchanged except mask logic)
     // ================================================================
     while (iteration < max_iterations) {
-        TICK(setup_while);
         if (remaining.empty())
             break;
 
@@ -335,9 +294,7 @@ py::dict flood_fill_random_seeds_3d(
         int z = seed_idx / (Y * X);
         int y = (seed_idx / X) % Y;
         int x = seed_idx % X;
-        TOCK(setup_while, setup_time_loop);
         // run region grow
-        TICK(single_flood_fill);
         flood_fill_single_region_binary_3d(
             prop,
             mask,
@@ -348,8 +305,6 @@ py::dict flood_fill_random_seeds_3d(
             footprint_tolerance,
             region_indices
         );
-        TOCK(single_flood_fill, single_flood_fill_time);
-        TICK(post_flood_fill_while);
 
         size_t grain_size = region_indices.size();
         if (grain_size == 0) { iteration++; continue; }
@@ -392,14 +347,9 @@ py::dict flood_fill_random_seeds_3d(
         if (stagnation_tolerance > 0 &&
             (iteration - last_success) > stagnation_tolerance)
             break;
-        TOCK(post_flood_fill_while, post_flood_fill_while_time);
 
     }
 
-    TOCK_ACC(single_flood_fill_time, "single_flood_fill_time");
-    TOCK_ACC(setup_time_loop, "setup_time_loop");
-    TOCK_ACC(post_flood_fill_while_time, "post_flood_fill_while_time");
-    TICK(relabel);
     // ===============================================================
     //        RELABEL + BUILD OUTPUT (unchanged)
     // ===============================================================
@@ -440,7 +390,6 @@ py::dict flood_fill_random_seeds_3d(
     out["segmentation"] = seg_arr;
     out["means"]        = means_arr;
     out["sizes"]        = sizes_arr;
-    TOCK_PRINT(relabel);
     return out;
 }
 
@@ -452,7 +401,7 @@ py::dict flood_fill_collect_seeds(
     float footprint_tolerance,
     py::object mask_obj,
     int max_iterations,
-    int min_grain_size,
+    int min_grain_size
 ) {
     // ---- property_map checks ----
     auto pbuf = property_map.request();
